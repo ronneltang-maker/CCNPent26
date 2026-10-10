@@ -146,7 +146,7 @@ vlan 10
 vlan 50
    name IPCCTVLAN
 vlan 69
-   name nameMO
+   name vlan41
 vlan 70
     name FAVEcolor
 vlan 71
