@@ -1,0 +1,515 @@
+Version: 2.0   10-14-2026
+---------------
+Login: root
+Pass: C1sc0123
+
+Get IP:
+rm -rf /etc/udev/rules.d/70-persistent-net.rules
+reboot
+
+Set NetAdapters:
+NetAdapter 1: NAT (208.8.8.0/24)
+NetAdapter 2: VMNet15 (10.255.10.0/24)
+NetAdapter 3: VMNet16 (10.69.255.0/29)
+NetAdapter 4: VMNet17 (10.69.255.8/29)
+
+!@cmd
+route add 172.16.29.0 mask 255.255.255.0 10.69.255.6
+
+
+
+1. 10.180.49.221/9
+2nd 128
+sm: 255.192.0.0
+nw: 10.
+
+
+
+2. 172.16.45.12/20
+3rd 16i
+255.240.0.0
+172.16.32.0/20
+
+
+3. 192.168.112.130/27
+4th 32i
+255.255.255.224
+192.168.112.128/0
+
+4. 192.168.231.75/18
+
+3rd 64
+255.255.192.0
+192.168.192.0/18 
+
+
+
+vlan 10 /24
+vlan 20 /24
+vlan 30 /30
+vlan 100 /27
+
+
+!@EIGRP - C1
+conf t
+router eigrp 100 
+    no auto-summary
+    eigrp router-id 192.168.1.129
+    network 10.2.1.0 0.0.0.255
+    network 10.2.2.0 0.0.0.255
+    network 192.168.1.128 0.0.0.31
+    network 10.1.4.4 0.0.0.3
+    end
+
+!@OSPF - C1
+conf t
+router ospf 1 
+    router-id 192.168.1.129
+    network 10.2.1.0 0.0.0.255 area 0
+    network 10.2.2.0 0.0.0.255 area 0
+    network 192.168.1.128 0.0.0.31 area 0
+    network 10.1.4.4 0.0.0.3 area 0
+    end
+
+!@BGP - C1
+conf t
+    router bgp 1
+        bgp log-neighbor-changes
+        neighbor 10.1.4.5 remote-as 4
+        address-family ipv4
+        neighbor 10.1.4.5 activate
+        network 10.2.1.0 0.0.0.255 mask 255.255.255.0
+        network 10.2.2.0 0.0.0.255 mask 255.255.255.0
+        network 192.168.1.128  mask 255.255.255.224
+        network 10.1.4.4 0.0.0.3 mask 255.255.255.252
+
+### EIGRP
+- Distance Vector
+- Dual Algorithm
+- EIGRP multicast address 224.0.0.10
+
+EIGRP MESSAGE
+1. Hello    - Discovers and Maintains neighbor session
+2. Query    - when a route is lost EIGRP router
+3. Updates  - New Route Advert
+4. Reply
+
+#if route is remove it note infinity in Delay
+
+
+!@Fix EIGRP Routers
+!@C1-C2
+
+conf t
+    no monitor session 1
+    vlan 10
+        no remote-span
+end
+
+show vlan remote-span
+
+
+##### EIGRP Metric weight Calc
+K1 : Bandwidth 
+K2 : Load
+K3 : Delay
+K4 : Reliability
+K5 : MTU
+
+Step1: find the given vaue
+- MIN BW = 10,000
+- Total Delay = 1000 + 1000 + 10 = 2010 usec
+####
+-
+
+1. Bandwidth/ Throughput
+= 10^7 / Min.Bw
+= 10 000 000 / 10 000
+= 1 000
+
+
+
+
+2. Total DLY / Latency
+= total DLY / 10
+= 2010 / 10
+= 201
+
+
+3. Composite Metric
+= 256 * (Throughput + Latency)
+= 256 * (1000+201)
+= 256 * 1201
+= 307,456
+
+
+
+############# EIGRP
+
+!@C1
+config t
+ router eigrp CCNPLEVEL
+  address-family ipv4 unicast auto 100
+    eigrp router-id 192.168.1.129
+    network 10.1.4.4 0.0.0.3
+    network 10.2.1.0 0.0.0.255
+    network 10.2.2.0 0.0.0.255
+    network 192.168.1.128 0.0.0.31
+    topology base
+        no auto-summary
+  end
+
+!@C2
+  conf t
+ router eigrp CCNPLEVEL
+ address-family ipv4 unicast auto 100
+    eigrp router-id 192.168.1.130
+    network 10.1.4.8 0.0.0.3
+    network 10.2.1.0 0.0.0.255
+    network 10.2.2.0 0.0.0.255
+    network 192.168.1.128 0.0.0.31
+    topology base
+     no auto-summary
+  end
+
+
+  !@R4
+conf t
+router eigrp CCNPLEVEL
+address-family ipv4 unicast auto 100
+  eigrp router-id 10.1.4.9
+  network 10.1.4.8 0.0.0.3
+  network 10.1.4.4 0.0.0.3
+  topology base
+  no auto-summary
+end
+
+
+
+### WIDE Metric
+Given Values
+Min = 10 000
+Total Delay = 1010
+
+1. Throughput
+= 10^7 * 65536 / MIN BW.
+= 655 360 000 000 / 10 000
+= 65 536 000
+
+2. Latency
+= TotalDelay psec (6 na 0) * 65536 / 10^6
+= 1010 000 000 * 65536 / 10^6
+= 66 191 360 000 000
+= 66 191 360
+3. Composite Metric
+= Throughput + Latency
+= 65 536 000 + 66 191 360
+= 131 727 360
+
+4.RIB - Scale 128
+= Composite Metric / 128
+= 131 727 360 / 128
+= 1 029 120
+
+#### Example 
+
+Given Values
+Min = 10 000
+Total Delay = 1010
+
+1. Throughput
+= 10^7 * 65536 / MIN BW.
+= 655 360 000 000 / 10 000
+= 65 536 000
+
+2. Latency
+= TotalDelay psec (6 na 0) * 65536 / 10^6
+= 11 010 000 000 * 65536 / 10^6
+= 721 551 360 000 000
+= 721 551 360
+
+3. Composite Metric
+= Throughput + Latency
+= 65 536 000 + 721 551 360
+= 787 087 360
+
+4.RIB - Scale 128
+= Composite Metric / 128
+= 787 087 360 / 128
+= 6 149 120
+
+!@R5
+conf t
+ router ospf 1
+  router-id 5.5.5.5
+  network 5.5.5.5 0.0.0.0 area 352
+  network 10.1.2.8 0.0.0.3 area 352
+  network 10.1.2.12 0.0.0.3 area 352
+  end
+
+
+  !@R6
+conf t
+ router ospf 1
+  router-id 6.6.6.6
+  exit
+ int range lo6
+  ip ospf 1 area 26
+  exit
+ int e1/1
+  ip ospf 1 area 26
+  exit
+ int e1/2
+  ip ospf 1 area 26
+  exit
+  end
+
+
+
+
+
+  #### OSPF Adjacency
+  1. ___ Router ID___ - must be unique amoung ospf Routers
+  2. ___ Area ID ___ - must be the same area id
+  3. ___ Subnet Mask ___ - same SM 
+  4. ___ Auth Type ___ - same
+  5. ___ Network Type ___ - same
+  6. ___ Timers ___ - same
+  7. ___ Stube Area ___ - same
+  8. DR 
+  9. BDR 
+
+
+#### 
+- D own
+- I nit
+- T wo-way
+- E xstart
+- E xchange
+- L oad
+- F ull
+
+
+
+#### OSPF Metric Cost
+- Reference BW / Int BW
+= 100mbps (default) / 10000 kbps = 10mbps 
+
+!@R1-R6
+conf t
+router ospf 1
+  auto-cost reference-bandwidth 100000
+end
+
+100 000 mbps /10mbps
+= 10 000
+
+
+#######
+
+SEED METRICS
+1. OSPF -> 20
+2. EIGRP -> INFINITY 
+3. RIP -> INFINITY
+4. BGP -> IGP Values
+5. ISIS -> 0
+
+###### PATH SELECTION PROCESS
+1. LPM - Longest Prefix Match /27 vs /30 = /30
+
+
+#
+
+conf t
+ router bgp 25
+ bgp log-neighbor-changes
+ neighbor 25.2.5.5 remote-as 25
+ neighbor 24.2.4.4  remote-as 34
+ neighbor 207.7.7.1  remote-as 1
+ neighbor 32.3.2.3  remote-as 34
+ address-family ipv4
+  network 25.2.5.0 mask 255.255.255.0
+  network 24.2.4.0 mask 255.255.255.0
+  network 207.7.7.0 mask 255.255.255.0
+  network 32.3.2.0 mask 255.255.255.0
+  network 22.22.22.22 mask 255.255.255.255
+  end
+
+external bgp 20
+internal bgp 200
+
+
+
+
+
+
+
+
+
+###########
+
+
+
+
+1. N - notif
+2. O - open
+3. K - keep
+4. U - update
+
+
+allowas in ----> to allow same asn you have access
+as overide ----> no access on both device
+
+
+R3 to google
+Default route injection
+
+
+#### bgp attribute
+1. A - ACL
+2. M - MATCH
+3. S - SET
+
+!@GoogleDNS
+config t
+ interface Loopback1
+  ip address 51.51.51.51 255.255.255.255
+ interface Loopback2
+  ip address 52.52.52.52 255.255.255.255
+ interface Loopback3
+  ip address 53.53.53.53 255.255.255.255
+ interface Loopback4
+  ip address 54.54.54.54 255.255.255.255
+ router bgp 25
+  network 51.51.51.51 mask 255.255.255.255
+  network 52.52.52.52 mask 255.255.255.255
+  network 53.53.53.53 mask 255.255.255.255
+  network 54.54.54.54 mask 255.255.255.255
+  end
+
+
+
+  ### 🎯 Exercise 09: Manipulate BGP Paths using Weight Attribute via Route Maps
+
+- If we want to go to 51.51.51.51 we use ISP1:CONVERGE(208.8.8.4)
+- If we want to go to 52.52.52.52 we use ISP2:PLDT(207.7.7.2)
+- If we want to go to 53.53.53.53 we use ISP3:GLOBE(209.9.9.3)
+
+<br>
+
+
+!@R1
+conf t
+  access-list 51 permit host 51.51.51.51
+  access-list 53 permit host 53.53.53.53
+!
+  route-map ISPfor51 permit 10
+  match ip address 51 
+    set weight 51
+  route-map ISPfor51 permit 20
+!
+ route-map ISPfor53 permit 10
+    match ip address 53 
+      set weight 53
+ route-map ISPfor53 permit 20
+
+!
+
+ router bgp 1
+  neighbor 208.8.8.4 route-map ISPfor51 in
+  neighbor 209.9.9.3 route-map ISPfor53 in
+end
+clear ip bgp * soft
+
+
+### 🎯 Exercise 10: Manipulate BGP Paths using Weight Attribute via Route Maps
+
+- If we want to go to 54.54.54.54 we use ISP1:CONVERGE(208.8.8.4)
+- If we want to go to 55.55.55.55 we use ISP3:GLOBE(209.9.9.3)
+
+!@R1
+conf t
+  access-list 54 permit host 54.54.54.54
+  access-list 55 permit host 55.55.55.55
+!
+  route-map ISPfor54 permit 10
+  match ip address 54 
+    set weight 54
+  route-map ISPfor54 permit 20
+!
+ route-map ISPfor55 permit 10
+    match ip address 55 
+      set weight 55
+ route-map ISPfor55 permit 20
+
+!
+
+ router bgp 1
+  neighbor 208.8.8.4 route-map ISPfor54 in
+  neighbor 209.9.9.3 route-map ISPfor55 in
+end
+clear ip bgp * soft
+
+!@R1
+conf t
+router bgp 1
+no neighbor 208.8.8.4 route-map ISPfor51 in
+no neighbor 209.9.9.3 route-map ISPfor53 in
+end
+
+10.1.1.0/30    
+10.1.1.4/30
+10.1.1.8/30
+
+
+
+10.1.20.8/29
+- 10.1.20.16/28
+- 10.1.20.32/30
+- 10.1.20.64/26
+- 10.1.20.127
+
+octec = 4th
+range = 8 - 127
+itancha = 0,128,256(x,0)
+          0-127, 128-255
+10.1.20.0/25
+
+#####
+
+/22
+octec = 
+
+!@R2
+
+conf t
+    router ospf 1
+    area 26 range 10.10.8.0 255.255.252.0
+end
+
+
+o= 3rd
+R= 33 - 34.255
+i= 
+2i= 32,
+conf t
+    router ospf 1
+    area 26 range 10.10.32.0 255.255.252.0
+end
+
+!@R2
+conf t
+    ip prefix-list NOLOOP seq 10 deny 10.10.8.0/22 ge 24
+    ip prefix-list NOLOOP seq 20 deny 10.10.32.0/22 ge 25
+    ip prefix-list NOLOOP seq 30 permit 0.0.0.0/0 le 32
+    router ospf 1
+     area 0 filter-list prefix NOLOOP in
+end
+
+
+!@R2,R6
+
+conf t 
+    router ospf 1
+     area 26 stub 
+end
